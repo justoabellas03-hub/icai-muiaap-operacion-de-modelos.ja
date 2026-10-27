@@ -57,5 +57,18 @@ class WineFeatures:
 
 def preprocess_wine_request(request: WineQualityRequest) -> WineFeatures:
     """Construye el vector que espera el estimador."""
+    return WineFeatures(
+        fixed_acidity= request.fixed_acidity,
+        volatile_acidity= request.volatile_acidity,
+        citric_acid= request.citric_acid,
+        residual_sugar= request.residual_sugar,
+        chlorides= request.chlorides,
+        free_sulfur_dioxide= request.free_sulfur_dioxide,
+        total_sulfur_dioxide= request.total_sulfur_dioxide,
+        density= request.density,
+        ph= request.ph,
+        sulphates= request.sulphates,
+        alcohol= request.alcohol,
+    )
 
-    return WineFeatures(**request.model_dump())
+ 
