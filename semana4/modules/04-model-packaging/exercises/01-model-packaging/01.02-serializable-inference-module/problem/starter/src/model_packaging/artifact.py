@@ -20,7 +20,7 @@ from model_packaging.contracts import (
 )
 
 ARTIFACT_SCHEMA_VERSION = "wine-quality-bundle-v1"
-DEFAULT_BUNDLE_PATH = Path("models/wine_quality_bundle")
+DEFAULT_BUNDLE_PATH = Path("assets/wine_quality_bundle")
 MANIFEST_FILENAME = "manifest.json"
 MODEL_FILENAME = "model.joblib"
 OUTPUT_LABELS: tuple[QualityBand, ...] = (
