@@ -105,7 +105,7 @@ def save_model_bundle(bundle_path: Path, estimator: WineQualityEstimator,manifes
         )
 
         # Guarda el modelo entrenado como model.joblib dentro de la carpeta temporal
-        joblib.dump(estimator, tmp_dir / MODEL_FILENAME)
+        joblib.dump({"estimator":estimator}, tmp_dir / MODEL_FILENAME)
 
         if bundle_path.exists():
                 # Nombre para apartar el bundle viejo, p. ej. models/wine_quality_bundle.old
@@ -164,7 +164,9 @@ def load_model_bundle(bundle_path: Path) -> LoadedModelBundle:
     except ValidationError as e:
         raise ValueError(f"Manifest inválido en {manifest_path}: {e}") from e
 
-    estimator=joblib.load(model_path)
+    payload=joblib.load(model_path)
+    if not isinstance(payload, Mapping) or "estimator" not in payload:
+        raise ValueError("model.joblib debe contener un diccionario con la clave 'estimator'.")
 
     if not (hasattr(estimator, "predict") and hasattr(estimator, "predict_proba")):
         raise TypeError("El estimador cargado no tiene predict() y predict_proba()")
