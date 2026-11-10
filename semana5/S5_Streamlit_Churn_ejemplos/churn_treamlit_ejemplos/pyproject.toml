@@ -1,0 +1,24 @@
+[project]
+name = "churn-treamlit-ejemplos"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Justo", email = "justoabellas03@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "streamlit>=1.67.0",
+]
+
+[project.scripts]
+churn-treamlit-ejemplos = "churn_treamlit_ejemplos:main"
+
+[build-system]
+requires = ["uv_build>=0.12.16,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.4.0",
+]
