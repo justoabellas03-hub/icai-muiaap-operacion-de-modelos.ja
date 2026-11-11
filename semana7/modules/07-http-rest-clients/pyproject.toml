@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Prácticas de HTTP, REST y cliente Wine Quality"
 requires-python = ">=3.12"
 dependencies = [
+    "ipykernel>=7.4.0",
     "requests>=2.32,<3.0",
 ]
 
