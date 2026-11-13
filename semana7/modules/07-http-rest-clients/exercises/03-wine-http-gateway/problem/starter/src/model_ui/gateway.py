@@ -38,7 +38,7 @@ class InferenceGateway(Protocol):
 
     def predict(self, values: Mapping[str, object]) -> PredictionPayload:
         """Valida la entrada y devuelve la salida de inferencia."""
-
+       
 
 def _validate_feature_names(values: Mapping[str, object]) -> None:
     """Comprueba la forma superficial antes de delegar en S4."""

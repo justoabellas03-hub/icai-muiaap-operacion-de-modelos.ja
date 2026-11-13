@@ -43,7 +43,6 @@ class HttpInferenceGateway:
     @property
     def last_request_id(self) -> str | None:
         """Devuelve el identificador de la ultima llamada en el contexto actual."""
-
         return getattr(self._request_context, "request_id", None)
 
     @last_request_id.setter
@@ -55,12 +54,45 @@ class HttpInferenceGateway:
 
         # TODO S7.1: envia POST a self._prediction_url con json={"features": ...},
         # Accept application/json y self._timeout. Compruebalo con el test de llamada.
+        url=self._prediction_url
+        http=self._session
+
+        body={"features":values}
+
+        try:
+            response=http.post(url, json=body, headers={"Accept":"application/json"}, timeout=self._timeout)
+        except requests.Timeout as error:
+            raise InferenceTimeoutError("La API tardó demasiado tiempo en responder") from error
+        except requests.ConnectionError as error:
+            raise ArtifactUnavailableError("El se pudo conectar con la API") from error
+        except requests.RequestException as error:
+            raise BackendInferenceError("Fallo inesperado por llamar a la API") from error
+
+        status = response.status_code
+        self._set_request_id(response.headers.get("X-Request-Id"))
+
+        if status == 422:
+            raise InputContractError("La API rechazó la muestra: no cumple el contrato de entrada.")
+        if status == 503:
+            raise ArtifactUnavailableError(
+                "El servicio no está disponible temporalmente"
+            )
+        if not 200 <= status < 300:
+            raise BackendInferenceError(
+                f"La API respondió con HTTP {status}."
+            )
+        response.
+        
+
         # TODO S7.2: traduce Timeout, ConnectionError y RequestException a los
         # errores de dominio que ya entiende PredictionController.
+
         # TODO S7.3: lee un objeto JSON, conserva request_id y diferencia 422/503
         # del resto de errores HTTP.
         # TODO S7.4: valida body["prediction"] como PredictionPayload; un dict sin
         # validar no satisface el contrato de salida.
+        predict_validado=PredictionPayload(**response.json())
+
         raise NotImplementedError("Completa los TODO S7.1-S7.4")
 
     @staticmethod

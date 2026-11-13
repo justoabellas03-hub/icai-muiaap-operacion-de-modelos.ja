@@ -34,7 +34,6 @@ def get_env_data(url: str, params: dict = None):
     if info.get("estado") != 200:
         raise ValueError(f"Error de AEMET: {info.get('descripcion')}")
 
-    # Paso 2: descargar los datos reales desde la URL que nos da AEMET
     print("Paso 2: descargando datos desde", info["datos"])
     datos = requests.get(info["datos"], timeout=TIMEOUT)
     datos.raise_for_status()
