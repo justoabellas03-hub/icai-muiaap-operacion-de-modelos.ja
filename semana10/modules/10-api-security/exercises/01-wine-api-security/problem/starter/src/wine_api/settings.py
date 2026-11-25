@@ -7,28 +7,25 @@ Todas las variables llevan el prefijo `WINE_API_`. Como ejemplo ya está migrada
 
 from typing import Literal
 
-from pydantic import (  # noqa: F401 - pistas para S10.1
-    BaseModel,
-    Field,
-    SecretStr,
-    field_validator,
-)
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Scope = Literal["predict", "admin"]
+
+STREAMLIT_ORIGIN = "http://localhost:8501"
 
 
 class ClientConfig(BaseModel):
     """Credencial, permisos y cuota de un cliente de la API."""
 
-    # TODO S10.1a: declara los tres campos de un cliente:
-    # - `key`: la API key. ¿Qué tipo de Pydantic evita que aparezca en un
-    #   `repr`, en un `print` o en un log? Investiga `SecretStr` y cómo se lee
-    #   su valor cuando de verdad lo necesitas.
-    # - `scopes`: lista de `Scope`; un scope desconocido debe fallar al arrancar.
-    # - `rate_limit_per_minute`: entero estrictamente positivo, 60 por defecto
-    #   (`Field` con una restricción numérica).
-    # Comprobación: tests/test_s10_1_settings.py (repr y configuración inválida).
+    # `SecretStr` enmascara la clave en `repr`, `str`, logs y `model_dump_json`;
+    # solo `get_secret_value()` la revela, y solo la usa `authenticate_client`.
+    key: SecretStr = Field(description="API key del cliente (secreta).")
+    # `Literal` hace que un scope desconocido falle al arrancar, no en runtime.
+    scopes: list[Scope] = Field(description="Permisos concedidos al cliente.")
+    rate_limit_per_minute: int = Field(
+        default=60, gt=0, description="Peticiones permitidas por minuto."
+    )
 
 
 class Settings(BaseSettings):
@@ -39,16 +36,21 @@ class Settings(BaseSettings):
     )
 
     mode: Literal["ready", "unavailable"] = "ready"
+    # Fail closed: sin clientes configurados no existe ninguna clave válida.
+    clients: dict[str, ClientConfig] = Field(default_factory=dict)
+    # Por defecto solo el front de Streamlit puede leer la API desde un navegador.
+    cors_origins: list[str] = Field(default_factory=lambda: [STREAMLIT_ORIGIN])
+    docs_enabled: bool = True
 
-    # TODO S10.1b: añade el resto de la configuración con valores por defecto
-    # SEGUROS (la API debe arrancar sin `.env`, pero sin abrir nada):
-    # - `clients`: diccionario nombre -> ClientConfig, vacío por defecto. Sin
-    #   clientes no hay claves válidas: es la decisión «fail closed».
-    # - `cors_origins`: lista de orígenes; por defecto solo el front de
-    #   Streamlit (`http://localhost:8501`).
-    # - `docs_enabled`: booleano, activado por defecto.
-    # Además, rechaza `"*"` en `cors_origins` con un `field_validator`: la
-    # configuración debe obligar a listar los orígenes.
-    # ¿Por qué un error de configuración debe impedir arrancar en lugar de
-    # aparecer en la primera petición?
-    # Comprobación: uv run pytest -q tests/test_s10_1_settings.py
+    @field_validator("cors_origins")
+    @classmethod
+    def _reject_wildcard_origin(cls, origins: list[str]) -> list[str]:
+        """Obliga a listar los orígenes: un `*` abriría la API a cualquier web.
+
+        Falla al construir `Settings`, es decir, al arrancar: un error de
+        configuración se detecta en el despliegue y no en la primera petición.
+        """
+
+        if "*" in origins:
+            raise ValueError("CORS origins must be listed explicitly, not '*'")
+        return origins

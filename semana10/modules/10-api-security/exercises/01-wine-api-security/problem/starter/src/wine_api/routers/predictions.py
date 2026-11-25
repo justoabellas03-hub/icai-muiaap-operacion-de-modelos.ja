@@ -1,9 +1,10 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends
 
 from wine_api.dependencies import PredictorDep, RequestIdDep
+from wine_api.rate_limit import enforce_rate_limit
 from wine_api.schemas import (
     VALID_FEATURES_EXAMPLE,
     ErrorResponse,
@@ -11,6 +12,7 @@ from wine_api.schemas import (
     PredictionRequest,
     PredictionResponse,
 )
+from wine_api.security import require_scope
 
 PREDICTION_EXAMPLES = {
     "valid": {
@@ -30,23 +32,37 @@ PREDICTION_EXAMPLES = {
     },
 }
 
-# TODO S10.2f: protege TODAS las operaciones de este router declarando la
-# autenticación en `dependencies=[...]` del `APIRouter` (no en cada ruta ni en
-# `include_router()`). ¿Qué ventaja tiene declararla una sola vez aquí?
-# TODO S10.3c: sustituye la autenticación a secas por `require_scope("predict")`.
-# TODO S10.4d: añade `enforce_rate_limit` DESPUÉS del scope: FastAPI resuelve
-# las dependencias en el orden en que las declaras.
-# TODO S10.6a: documenta en `responses=` los 401, 403 y 429 con `ErrorResponse`
-# (y la cabecera `Retry-After` del 429; investiga el campo `headers` de una
-# respuesta en OpenAPI). Comprobación: tests/test_s10_6_openapi.py
+# La seguridad se declara una sola vez en el router: toda ruta nueva que se
+# añada aquí nace protegida y no depende de que alguien se acuerde de hacerlo.
+# El orden importa: primero clave y scope (401/403) y después la cuota (429),
+# para que una petición rechazada no consuma la cuota del cliente.
 router = APIRouter(
     prefix="/v1/predictions",
     tags=["predictions"],
+    dependencies=[Depends(require_scope("predict")), Depends(enforce_rate_limit)],
     responses={
         400: {"model": ErrorResponse, "description": "El cuerpo no es JSON válido."},
+        401: {
+            "model": ErrorResponse,
+            "description": "Falta la cabecera `X-API-Key` o la clave no es válida.",
+        },
+        403: {
+            "model": ErrorResponse,
+            "description": "La clave no tiene el scope `predict`.",
+        },
         422: {
             "model": ErrorResponse,
             "description": "JSON válido que incumple campos, tipos o rangos.",
+        },
+        429: {
+            "model": ErrorResponse,
+            "description": "Cuota por minuto agotada: espera `Retry-After` segundos.",
+            "headers": {
+                "Retry-After": {
+                    "description": "Segundos enteros hasta que se reabre la ventana.",
+                    "schema": {"type": "integer"},
+                }
+            },
         },
         503: {"model": ErrorResponse, "description": "El modelo no está cargado."},
     },
@@ -70,6 +86,9 @@ def create_prediction(
     - Los rangos son inclusivos y están en el esquema `WineFeatures`.
     - `confidence` se devuelve con dos decimales.
     - Guarda `request_id` si necesitas reportar una incidencia.
+    - Exige una API key con scope `predict` en `X-API-Key`. Cada petición
+      aceptada consume cuota: `X-RateLimit-Remaining` indica cuántas quedan
+      en la ventana y, al agotarlas, la API responde `429` con `Retry-After`.
     """
 
     output = predictor.predict(payload.features)

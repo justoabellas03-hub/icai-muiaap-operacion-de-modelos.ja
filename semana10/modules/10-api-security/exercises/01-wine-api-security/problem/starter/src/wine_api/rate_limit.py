@@ -6,15 +6,17 @@ producción el estado va a Redis o el límite lo aplica el API gateway.
 """
 
 import logging
-import math  # noqa: F401 - pista para S10.4b
+import math
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, Request, Response  # noqa: F401 - pista para S10.4c
+from fastapi import Depends, Request, Response
 
+from wine_api.dependencies import RequestIdDep
+from wine_api.errors import RateLimitExceededError
 from wine_api.security import ClientDep
 
 logger = logging.getLogger("wine_api.rate_limit")
@@ -50,17 +52,25 @@ class FixedWindowRateLimiter:
     def hit(self, key: str, limit: int) -> RateLimitDecision:
         """Cuenta una petición de `key` si cabe en su cuota de `limit`."""
 
-        # TODO S10.4b: implementa la ventana fija dentro de `with self._lock:`.
-        # - Si la ventana de `key` no existe o ya ha pasado `window_seconds`
-        #   desde su inicio, empieza una nueva en `self.clock()`.
-        # - Si ya hay `limit` peticiones, deniega SIN contar y calcula
-        #   `retry_after`: segundos enteros que faltan para que acabe la
-        #   ventana. ¿Por qué hay que redondear hacia arriba y no hacia abajo?
-        # - Si cabe, cuenta la petición y devuelve cuántas quedan.
-        # Usa `self.clock()`, nunca `time.time()`: así los tests controlan el
-        # reloj. Mira `usage()` para ver cómo se lee `_windows`.
-        # Comprobación: los tres primeros tests de tests/test_s10_4_rate_limit.py
-        raise NotImplementedError("TODO S10.4b")
+        with self._lock:
+            now = self.clock()
+            start, count = self._windows.get(key, (now, 0))
+            if now - start >= self.window_seconds:
+                # La ventana anterior ha caducado: empieza una nueva ahora.
+                start, count = now, 0
+            if count >= limit:
+                # Se deniega SIN contar. Redondeo hacia arriba: con 0.8 s
+                # restantes, `Retry-After: 0` invitaría a reintentar ya y a
+                # recibir otro 429; `1` garantiza que la ventana ha acabado.
+                retry_after = math.ceil(start + self.window_seconds - now)
+                return RateLimitDecision(
+                    allowed=False, remaining=0, retry_after=retry_after
+                )
+            count += 1
+            self._windows[key] = (start, count)
+            return RateLimitDecision(
+                allowed=True, remaining=limit - count, retry_after=0
+            )
 
     def usage(self, key: str) -> int:
         """Peticiones contadas para `key` en la ventana actual."""
@@ -81,16 +91,30 @@ def get_rate_limiter(request: Request) -> FixedWindowRateLimiter:
 RateLimiterDep = Annotated[FixedWindowRateLimiter, Depends(get_rate_limiter)]
 
 
-def enforce_rate_limit(client: ClientDep, limiter: RateLimiterDep) -> None:
-    """Cuenta la petición del cliente autenticado o lanza un `429`."""
+def enforce_rate_limit(
+    client: ClientDep,
+    limiter: RateLimiterDep,
+    response: Response,
+    request_id: RequestIdDep,
+) -> None:
+    """Cuenta la petición del cliente autenticado o lanza un `429`.
 
-    # TODO S10.4c: cuenta la petición con `limiter.hit(...)` usando el nombre
-    # del cliente como clave y su `rate_limit_per_minute` como límite.
-    # - Si no se permite, lanza `RateLimitExceededError` con `Retry-After`.
-    # - Si se permite, añade a la respuesta `X-RateLimit-Limit` y
-    #   `X-RateLimit-Remaining`. Investiga en la documentación de FastAPI
-    #   «Response - Change Headers»: una dependencia también puede recibir
-    #   `response: Response`.
-    # ¿Por qué esta dependencia va DESPUÉS de autenticar y autorizar?
-    # Comprobación: uv run pytest -q tests/test_s10_4_rate_limit.py
-    raise NotImplementedError("TODO S10.4c")
+    Va DESPUÉS de autenticar y autorizar: la cuota es por cliente, así que hay
+    que saber quién llama, y una petición sin clave o sin permiso no debe
+    gastar la cuota de nadie.
+    """
+
+    limit = client.rate_limit_per_minute
+    decision = limiter.hit(client.name, limit)
+    if not decision.allowed:
+        logger.warning(
+            "Rate limit exceeded: client %s, retry after %ss (request_id=%s)",
+            client.name,
+            decision.retry_after,
+            request_id,
+            extra={"request_id": request_id},
+        )
+        raise RateLimitExceededError(retry_after=decision.retry_after, limit=limit)
+    # FastAPI copia estas cabeceras a la respuesta final de la ruta.
+    response.headers["X-RateLimit-Limit"] = str(limit)
+    response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
