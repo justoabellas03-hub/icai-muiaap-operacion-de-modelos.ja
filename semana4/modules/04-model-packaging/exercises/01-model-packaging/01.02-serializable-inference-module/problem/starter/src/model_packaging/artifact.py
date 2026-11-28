@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -158,17 +158,42 @@ def load_model_bundle(bundle_path: Path) -> LoadedModelBundle:
     if not model_path.is_file():
         raise FileNotFoundError(f"No existe el archivo {MODEL_FILENAME} en la carpeta bundle")
 
+    # 1) Metadatos: se validan ANTES de deserializar el binario. Si el
+    #    manifiesto no es compatible no tiene sentido (ni es seguro) cargar
+    #    model.joblib.
     texto=manifest_path.read_text(encoding="utf-8")
     try:
         manifest=ArtifactManifest.model_validate_json(texto)
     except ValidationError as e:
         raise ValueError(f"Manifest inválido en {manifest_path}: {e}") from e
 
-    payload=joblib.load(model_path)
+    if manifest.schema_version != ARTIFACT_SCHEMA_VERSION:
+        raise ValueError(
+            f"schema_version {manifest.schema_version!r} no es compatible; "
+            f"se esperaba {ARTIFACT_SCHEMA_VERSION!r}"
+        )
+    if manifest.preprocessing_version != PREPROCESSING_VERSION:
+        raise ValueError(
+            f"preprocessing_version {manifest.preprocessing_version!r} no coincide "
+            f"con el preprocesado del código ({PREPROCESSING_VERSION!r})"
+        )
+
+    # 2) Binario. Un model.joblib truncado o corrupto lanza errores muy
+    #    distintos (EOFError, struct.error, IndexError...); se convierten en
+    #    ValueError para que el CLI los muestre con código 2.
+    try:
+        payload=joblib.load(model_path)
+    except Exception as e:
+        raise ValueError(
+            f"No se pudo cargar {model_path}: {type(e).__name__}: {e}"
+        ) from e
     if not isinstance(payload, Mapping) or "estimator" not in payload:
         raise ValueError("model.joblib debe contener un diccionario con la clave 'estimator'.")
 
-    if not (hasattr(estimator, "predict") and hasattr(estimator, "predict_proba")):
+    # Antes se comprobaba `estimator` sin haberlo sacado del payload (NameError).
+    estimator = payload["estimator"]
+    if not (callable(getattr(estimator, "predict", None))
+            and callable(getattr(estimator, "predict_proba", None))):
         raise TypeError("El estimador cargado no tiene predict() y predict_proba()")
     if type(estimator).__name__ != manifest.estimator_type:
         raise ValueError(
@@ -202,8 +227,7 @@ def infer_wine_quality(
         quality_band=etiqueta,
         confidence=max(proba),
         model_version=manifest.model_version,
-        preprocessing_version=PREPROCESSING_VERSION
-
+        preprocessing_version=manifest.preprocessing_version,
     )
 
 

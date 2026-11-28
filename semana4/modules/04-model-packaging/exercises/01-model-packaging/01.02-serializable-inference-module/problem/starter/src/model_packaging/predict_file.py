@@ -67,7 +67,7 @@ def main() -> int:
     arguments = parse_args()
     try:
         n = predict_file(arguments.input, arguments.output, arguments.bundle)
-    except (FileNotFoundError, ValueError) as error:
+    except (FileNotFoundError, ValueError, TypeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     print(f"{n} predicciones escritas en {arguments.output}")
