@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-wine-quality = "wine_quality:main"
+wine-quality = "wine_quality.train:main"
 
 [build-system]
 requires = ["uv_build>=0.12.16,<0.13.0"]

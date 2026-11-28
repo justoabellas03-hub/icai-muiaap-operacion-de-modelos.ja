@@ -72,9 +72,15 @@ def train_and_evaluate(path: Path) -> dict[str, object]:
     }
 
 
+# Ruta absoluta calculada desde este archivo: src/wine_quality/train.py -> raíz
+# del proyecto (parents[2]). Así el entrenamiento arranca igual desde la raíz
+# del proyecto, desde la raíz del fork o con `uv run wine-quality`.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATASET_PATH = PROJECT_ROOT / "data" / "raw" / "WineQT.csv"
+
+
 def main() -> None:
-    project_root = Path("../../data/raw/WineQT.csv")
-    metrics = train_and_evaluate(project_root / "data" / "raw" / "WineQT.csv")
+    metrics = train_and_evaluate(DATASET_PATH)
 
     print(f"Filas: {metrics['rows']}")
     print(f"Variables: {metrics['features']}")
