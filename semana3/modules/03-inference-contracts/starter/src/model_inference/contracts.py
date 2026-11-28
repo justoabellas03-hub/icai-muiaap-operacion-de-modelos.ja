@@ -12,8 +12,8 @@ class WineQualityRequest(BaseModel):
     volatile_acidity: float = Field(ge=0, le=2)
     citric_acid: float = Field(ge=0, le=2)
     residual_sugar: float = Field(ge=0, le=20)
-    chlorides: float = Field(ge=0, le=100)
-    free_sulfur_dioxide: float = Field(ge=0, le=300)
+    chlorides: float = Field(ge=0, le=1)  # tabla del lienzo 3.1: 0-1 g/dm³
+    free_sulfur_dioxide: float = Field(ge=0, le=100)  # lienzo 3.1: 0-100 mg/dm³
     total_sulfur_dioxide: float = Field(ge=0, le=300)
     density: float = Field(ge=0.98, le=1.01)
     ph: float = Field(ge=2.5, le=4.5)
